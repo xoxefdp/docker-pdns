@@ -1,0 +1,108 @@
+version: '3'
+
+services:
+  pdns-mariadb:
+    image: mariadb:latest
+    restart: unless-stopped
+    environment:
+      MYSQL_USER: "${DB_USERNAME}"
+      MYSQL_PASSWORD: "${DB_PASSWORD}"
+      MYSQL_DATABASE: "${DB_DATABASE}"
+      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASSWORD}"
+    # volumes:
+    #   - GEONAMES_MARIADB_DATA:/var/lib/mysql
+    #   - GEONAMES_MARIADB_CONFIG:/etc/mysql
+    #   - ./DATA:/DATA
+    ports:
+      - "${DB_PORT}:3306"
+
+  pdns-master:
+    image: pschiffe/pdns-mysql:alpine
+    restart: unless-stopped
+    environment:
+      PDNS_master: "${PDNS_master}"
+      PDNS_api: "${PDNS_api}"
+      PDNS_api_key: "${PDNS_api_key}"
+      PDNS_webserver: "${PDNS_webserver}"
+      PDNS_webserver_address: "${PDNS_webserver_address}"
+      PDNS_webserver_password: "${PDNS_webserver_password}"
+      PDNS_version_string: "${PDNS_version_string}"
+      PDNS_default_ttl: "${PDNS_default_ttl}"
+      PDNS_soa_minimum_ttl: "${PDNS_soa_minimum_ttl}"
+      PDNS_default_soa_name: "${PDNS_default_soa_name}"
+      PDNS_default_soa_mail: "${PDNS_default_soa_mail}"
+      PDNS_allow_axfr_ips: "${PDNS_allow_axfr_ips}"
+      PDNS_only_notify: "${PDNS_only_notify}"
+      PDNS_gmysql_host: pdns-mariadb
+      PDNS_gmysql_port: "${DB_PORT}"
+      PDNS_gmysql_user: "${DB_USERNAME}"
+      PDNS_gmysql_password: "${DB_PASSWORD}"
+      PDNS_gmysql_dbname: "${DB_DATABASE}"
+    ports:
+      - "${DNS_PORT}:53"
+      - "${DNS_PORT}:53/udp"
+    depends_on:
+      - pdns-mariadb
+
+  pdns-slave:
+    image: pschiffe/pdns-mysql:alpine
+    restart: unless-stopped
+    environment:
+      PDNS_gmysql_dbname: "${DB_DATABASE}"
+      PDNS_slave: "${PDNS_slave}"
+      PDNS_version_string: "${PDNS_version_string}"
+      PDNS_disable_axfr: "${PDNS_disable_axfr}"
+      PDNS_allow_notify_from: "${PDNS_allow_notify_from}"
+      SUPERMASTER_IPS: "${SUPERMASTER_IPS}"
+    ports:
+      - "${DNS_PORT_SLAVE}:53"
+      - "${DNS_PORT_SLAVE}:53/udp"
+    depends_on:
+      - pdns-mariadb
+
+  pdns-recursor:
+    build: ./pdns-recursor
+    image: pschiffe/pdns-recursor:alpine
+    restart: unless-stopped
+    environment:
+      PDNS_api: "${PDNS_api}"
+      PDNS_api_key: "${PDNS_api_key}"
+      PDNS_webserver: "${PDNS_webserver}"
+      PDNS_webserver_address: "${PDNS_webserver_address}"
+      PDNS_webserver_password: "${PDNS_webserver_password}"
+    ports:
+      - "${DNS_PORT_RECURSOR}:53"
+      - "${DNS_PORT_RECURSOR}:53/udp"
+    depends_on:
+      - pdns-mariadb
+
+  pdns-admin-uwsgi:
+    build: ./pdns-admin-uwsgi
+    image: pschiffe/pdns-admin-uwsgi
+    restart: unless-stopped
+    environment:
+      PDNS_ADMIN_SQLA_DB_HOST: pdns-mariadb
+      PDNS_ADMIN_SQLA_DB_PORT: "${DB_PORT}"
+      PDNS_ADMIN_SQLA_DB_USER: "${DB_USERNAME}"
+      PDNS_ADMIN_SQLA_DB_PASSWORD: "${DB_PASSWORD}"
+      PDNS_ADMIN_SQLA_DB_NAME: "${DB_DATABASE}"
+    depends_on:
+      - pdns-mariadb
+      - pdns-master
+  #   volumes:
+  #     - ${PDNS_ADMIN_UPLOAD}:/opt/powerdns-admin/upload
+
+  pdns-admin-static:
+    build: ./pdns-admin-static
+    image: pschiffe/pdns-admin-static
+    restart: unless-stopped
+    environment:
+      PDNS_api: "${PDNS_api}"
+      PDNS_api_key: "${PDNS_api_key}"
+      PDNS_webserver: "${PDNS_webserver}"
+      PDNS_webserver_address: "${PDNS_webserver_address}"
+      PDNS_webserver_password: "${PDNS_webserver_password}"
+    depends_on:
+      - pdns-admin-uwsgi
+    ports:
+      - ${DNS_GUI_PORT}:80
